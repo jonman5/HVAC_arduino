@@ -8,6 +8,8 @@ Arduino sketch to control sensors and vent
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
 #endif
+#include <time.h>
+#include <ctime>
 #include <Firebase_ESP_Client.h>
 
 //Provide the token generation process info.
@@ -50,8 +52,15 @@ FirebaseData fbdo;
 FirebaseAuth auth;
 FirebaseConfig config;
 
+//Set unitID
+String unitID = "111111";
+
+
 unsigned long sendDataPrevMillis = 0;
 int count = 0;
+
+bool storeCurrentSensorData(float temperature, float humidity, double ventTemp);
+bool storeLogs(float temperature, float humidity, double ventTemp, String time);
 
 void setup(){
   delay(200);
@@ -69,12 +78,25 @@ void setup(){
   Serial.println("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED){
     Serial.print("...");
-    delay(750);
+    delay(1000);
   }
   Serial.println();
   Serial.println("Connection to WIFI established!IP: ");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+
+  //Connect to time server to retrieve current time
+  configTime(3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.println("Connecting to time server");
+  while (!time(nullptr)) {
+    Serial.print("...");
+    delay(1000);
+  }
+  Serial.println();
+
+  //Set the timezone
+  setenv("TZ","EST5EDT,M3.2.0,M11.1.0",1);
+  tzset();
 
   //Set the database API key
   config.api_key = API_KEY;
@@ -94,7 +116,7 @@ void setup(){
 }
 
 void loop(){
-  if (Firebase.ready() && (millis() - sendDataPrevMillis > 3000 || sendDataPrevMillis == 0)){
+  if (Firebase.ready() && (millis() - sendDataPrevMillis > 2000 || sendDataPrevMillis == 0)){
     //Reset timer
     sendDataPrevMillis = millis();
     x++;
@@ -119,41 +141,105 @@ void loop(){
     Serial.print("Sensor2 Temp= "); Serial.print(t_vent);
     Serial.println("°C");
     Serial.print('\n');
-
+    
+    //Set servo angle
     myservo.write(90);
     
+    //Get current time from time server
+    time_t now = time(nullptr);
+    tm* time_local = localtime(&now);
 
-
+    //Format current time and save in string
+    char* time_string = new char [40];
+    strftime(time_string, 40, "%F %X", time_local); //time_string is formatted at YYYY-MM-DD HH:mm:SS
+    Serial.println(time_string);
     
-    // Write data to database under units/111111
-    if (Firebase.RTDB.setFloat(&fbdo, "units/111111/humidity", h)){
-      Serial.println("PASSED");
-      Serial.println("PATH: " + fbdo.dataPath());
-      Serial.println("TYPE: " + fbdo.dataType());
-    }
-    else {
-      Serial.println("FAILED");
-      Serial.println("Error: " + fbdo.errorReason());
-    }
-
-    if (Firebase.RTDB.setFloat(&fbdo, "units/111111/temperature", t_room)){
-      Serial.println("PASSED");
-      Serial.println("PATH: " + fbdo.dataPath());
-      Serial.println("TYPE: " + fbdo.dataType());
-    }
-    else {
-      Serial.println("FAILED");
-      Serial.println("Error: " + fbdo.errorReason());
-    }  
-    
-    if (Firebase.RTDB.setDouble(&fbdo, "units/111111/temperatureVent", t_vent)){
-      Serial.println("PASSED");
-      Serial.println("PATH: " + fbdo.dataPath());
-      Serial.println("TYPE: " + fbdo.dataType());
-    }
-    else {
-      Serial.println("FAILED");
-      Serial.println("Error: " + fbdo.errorReason());
+    // Write current sensor data to real time database
+    if (storeCurrentSensorData(t_room, h, t_vent)){
+      Serial.println("Current sensor data updated in RTDB for " + unitID);
+      
+      // Write current sensor data to logs in real time database
+      if (storeLogs(t_room, h, t_vent, time_string)){
+        Serial.print("Sensor logs stored in RTDB for ");
+        Serial.println(time_string);
+      }
+      else {
+        Serial.println("Log data entry failed");
+      }
     }
   } 
+}
+
+bool storeCurrentSensorData(float temperature, float humidity, double ventTemp){
+    // Write current sensor data to real time database under units/unitID
+    if (Firebase.RTDB.setFloat(&fbdo, "units/" + unitID + "/humidity", h)){
+      // Serial.println("PASSED");
+      // Serial.println("PATH: " + fbdo.dataPath());
+      // Serial.println("TYPE: " + fbdo.dataType());
+    }
+    else {
+      Serial.println("FAILED");
+      Serial.println("Error: " + fbdo.errorReason());
+      return false;
+    }
+
+    if (Firebase.RTDB.setFloat(&fbdo, "units/" + unitID + "/temperature", t_room)){
+      // Serial.println("PASSED");
+      // Serial.println("PATH: " + fbdo.dataPath());
+      // Serial.println("TYPE: " + fbdo.dataType());
+    }
+    else {
+      Serial.println("FAILED");
+      Serial.println("Error: " + fbdo.errorReason());
+      return false;
+    }  
+    
+    if (Firebase.RTDB.setDouble(&fbdo, "units/" + unitID + "/temperatureVent", t_vent)){
+      // Serial.println("PASSED");
+      // Serial.println("PATH: " + fbdo.dataPath());
+      // Serial.println("TYPE: " + fbdo.dataType());
+    }
+    else {
+      Serial.println("FAILED");
+      Serial.println("Error: " + fbdo.errorReason());
+      return false;
+    }
+    return true;
+}
+
+bool storeLogs(float temperature, float humidity, double ventTemp, String time){
+    // Add current sensor data to logs under units/unitID/logs/time
+  if (Firebase.RTDB.setFloat(&fbdo, "units/" + unitID + "/logs/" + time + "/humidity", h)){
+    // Serial.println("PASSED");
+    // Serial.println("PATH: " + fbdo.dataPath());
+    // Serial.println("TYPE: " + fbdo.dataType());
+  }
+  else {
+    Serial.println("FAILED");
+    Serial.println("Error: " + fbdo.errorReason());
+    return false;
+  }
+
+  if (Firebase.RTDB.setFloat(&fbdo, "units/" + unitID + "/logs/" + time + "/temperature", t_room)){
+    // Serial.println("PASSED");
+    // Serial.println("PATH: " + fbdo.dataPath());
+    // Serial.println("TYPE: " + fbdo.dataType());
+  }
+  else {
+    Serial.println("FAILED");
+    Serial.println("Error: " + fbdo.errorReason());
+    return false;
+  }  
+  
+  if (Firebase.RTDB.setDouble(&fbdo, "units/" + unitID + "/logs/" + time + "/temperatureVent", t_vent)){
+    // Serial.println("PASSED");
+    // Serial.println("PATH: " + fbdo.dataPath());
+    // Serial.println("TYPE: " + fbdo.dataType());
+  }
+  else {
+    Serial.println("FAILED");
+    Serial.println("Error: " + fbdo.errorReason());
+    return false;
+  }
+  return true;
 }
