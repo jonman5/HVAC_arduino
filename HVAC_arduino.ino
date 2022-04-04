@@ -29,11 +29,7 @@ DHT dht(DHT11PIN, DHTTYPE);
 float h,t_room,tf;
 double t_vent;
 
- 
 Servo myservo;
-int angle = 0;  
-int x=0;
-
 
 Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
@@ -127,7 +123,6 @@ void loop(){
   if (Firebase.ready() && (millis() - sendDataPrevMillis > 2000 || sendDataPrevMillis == 0)){
     //Reset timer
     sendDataPrevMillis = millis();
-    x++;
 
     //Read sensor data
     h = dht.readHumidity();
@@ -155,8 +150,21 @@ void loop(){
     Serial.print("\nTarget Temp: ");
     Serial.println(currentTargetTemp);
 
-    //Open vent
+//    Open vent
+    setVentOpening(0);
+    delay(1000);
     setVentOpening(100);
+    delay(1000);
+    setVentOpening(30);
+    delay(1000);
+    setVentOpening(100);
+    delay(1000);
+    setVentOpening(60);
+    delay(1000);
+    setVentOpening(0);
+    delay(1000);
+    setVentOpening(80);
+ 
     
     //Get current time from time server
     time_t now = time(nullptr);
@@ -317,9 +325,22 @@ void setVentOpening(int percent){
   //Set the servo to achieve the desired amount of vent open
   //100 percent is fully open vent
   //0 percent is fully closed vent
-    if (percent>100)
-      percent %= 100;
-    int angle = (int) ((percent*1.4)+30);
-    myservo.write(angle);
+  if (percent>100)
+     percent %= 100;
+  int new_angle = (int) ((percent*1.4)+30);
+  int current_angle = myservo.read();
+  int pos=0;
+  if (current_angle < new_angle){
+    for (pos = current_angle; pos < new_angle; pos++) { // goes from 0 degrees to 180 degrees
+      // in steps of 1 degree
+      myservo.write(pos);              // tell servo to go to position in variable 'pos'
+      delay(10);                       // waits 15 ms for the servo to reach the position
+      }
+    }
+  else{
+    for(pos = current_angle; pos > new_angle; pos--) { // goes from 180 degrees to 0 degrees
+      myservo.write(pos);              // tell servo to go to position in variable 'pos'
+      delay(10);                       // waits 15 ms for the servo to reach the position
+    }
+  }
 }
-
