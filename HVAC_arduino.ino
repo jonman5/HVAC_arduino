@@ -60,11 +60,13 @@ String unitID = "111111";
 unsigned long sendDataPrevMillis = 0;
 int count = 0;
 double currentTargetTemp = 0;
+int currentVentPosition = 0;
 
 bool storeCurrentSensorData(float temperature, float humidity, double ventTemp);
 bool storeLogs(float temperature, float humidity, double ventTemp, String time);
 double getSetTemp();
 void setVentOpening(int percent);
+int control_function(float room_temp, float vent_temp, float target_temp, int prev_state);
 
 void setup(){
   delay(200);
@@ -150,20 +152,20 @@ void loop(){
     Serial.print("\nTarget Temp: ");
     Serial.println(currentTargetTemp);
 
-//    Open vent
-    setVentOpening(0);
-    delay(1000);
-    setVentOpening(100);
-    delay(1000);
-    setVentOpening(30);
-    delay(1000);
-    setVentOpening(100);
-    delay(1000);
-    setVentOpening(60);
-    delay(1000);
-    setVentOpening(0);
-    delay(1000);
-    setVentOpening(80);
+//    test vent
+//    setVentOpening(0);
+//    delay(1000);
+//    setVentOpening(100);
+//    delay(1000);
+//    setVentOpening(30);
+//    delay(1000);
+//    setVentOpening(100);
+//    delay(1000);
+//    setVentOpening(60);
+//    delay(1000);
+//    setVentOpening(0);
+//    delay(1000);
+//    setVentOpening(80);
  
     
     //Get current time from time server
@@ -188,6 +190,9 @@ void loop(){
         Serial.println("Log data entry failed");
       }
     }
+    int newVentPosition = control_function(t_room, t_vent, currentTargetTemp, currentVentPosition);
+    setVentOpening(newVentPosition);
+    currentVentPosition = newVentPosition;
   } 
 }
 
@@ -343,4 +348,33 @@ void setVentOpening(int percent){
       delay(10);                       // waits 15 ms for the servo to reach the position
     }
   }
+}
+
+int control_function(float room_temp, float vent_temp, float target_temp, int prev_state){
+  float delta_temp_desired = abs(room_temp-target_temp); //difference in temp between target_temp and room_temp
+  float threshold_temp = 0.2; //this is the threshold temperature that defines the range of temp around the target_temp that is allowed
+  int percent_multiplier = 20; //this multiplier defines the amount the vent should be open per 0.1 degree in temp difference outside of threshold
+  if (delta_temp_desired <= threshold_temp){
+    return prev_state; //if within threshold of desired temp, keep vent at previous state
+  }
+
+  int percent_open = 0;
+
+  if (vent_temp < room_temp && target_temp < room_temp){ //check if vent is cooler than room temp & check if cooling is needed
+      percent_open = (int) floor((delta_temp_desired)*10) * percent_multiplier; //percent of vent that needs to be open according to percent_multiplier defined
+      if (percent_open > 100){
+        return 100; //percent cannot be greater than 100
+      }
+      return percent_open;
+  }
+
+  else if (vent_temp > room_temp && target_temp > room_temp) { //check if vent is hotter than room temp & check if heating is needed
+      percent_open = (int) floor((delta_temp_desired)*10) * percent_multiplier; //percent of vent that needs to be open according to percent_multiplier defined
+      if (percent_open > 100){
+        return 100; //percent cannot be greater than 100
+      }
+      return percent_open;
+  }
+
+  else return 0; //in all other cases close the vent
 }
