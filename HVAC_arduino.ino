@@ -1,5 +1,9 @@
 /* HVACinator project for COEN/ELEC 390
+Created by Team 7
 Arduino sketch to control sensors and vent
+
+This sketch uses the Firebase-ESP-Client library created by K. Suwatchai (Mobizt)
+https://github.com/mobizt/Firebase-ESP-Client
 */
 
 #include <Arduino.h>
@@ -11,12 +15,8 @@ Arduino sketch to control sensors and vent
 #include <time.h>
 #include <ctime>
 #include <Firebase_ESP_Client.h>
-
-//Provide the token generation process info.
 #include "addons/TokenHelper.h"
-//Provide the RTDB payload printing info and other helper functions.
 #include "addons/RTDBHelper.h"
-
 #include <DHT.h>
 #include "Servo.h"
 #include <Wire.h>
@@ -46,11 +46,16 @@ Adafruit_MLX90614 mlx = Adafruit_MLX90614();
 
 //RTDB URL
 #define DATABASE_URL "https://hvacinator-default-rtdb.firebaseio.com/" 
+//Firebase project ID
+#define FIREBASE_PROJECT_ID "hvacinator"
 
 //Set global firebase variables for connecting and storing data
 FirebaseData fbdo;
+FirebaseData fbdo2;
 FirebaseAuth auth;
 FirebaseConfig config;
+FirebaseJson JSONdata;
+FirebaseJsonData result;
 
 //Set unitID
 String unitID = "111111";
@@ -58,9 +63,12 @@ String unitID = "111111";
 
 unsigned long sendDataPrevMillis = 0;
 int count = 0;
+double currentTargetTemp = 0;
 
 bool storeCurrentSensorData(float temperature, float humidity, double ventTemp);
 bool storeLogs(float temperature, float humidity, double ventTemp, String time);
+double getSetTemp();
+void setVentOpening(int percent);
 
 void setup(){
   delay(200);
@@ -123,12 +131,11 @@ void loop(){
 
     //Read sensor data
     h = dht.readHumidity();
-    delay(100);
+    delay(50);
     t_room = dht.readTemperature();
-    delay(100); 
-    t_vent = mlx.readObjectTempC();
-    t_vent = mlx.readObjectTempC();
-    delay(100);
+    delay(50); 
+    t_vent = mlx.readAmbientTempC();
+    t_vent = mlx.readAmbientTempC();
 
     //Print sensor data to serial console for debugging
     Serial.print('\n');
@@ -139,11 +146,17 @@ void loop(){
     Serial.print(t_room);
     Serial.println("°C, ");
     Serial.print("Sensor2 Temp= "); Serial.print(t_vent);
-    Serial.println("°C");
-    Serial.print('\n');
+    Serial.println("°C\n");
     
-    //Set servo angle
-    myservo.write(90);
+    double newTarget = getTargetTemp();
+    if (newTarget != -9999){
+      currentTargetTemp = newTarget;
+    }
+    Serial.print("\nTarget Temp: ");
+    Serial.println(currentTargetTemp);
+
+    //Open vent
+    setVentOpening(100);
     
     //Get current time from time server
     time_t now = time(nullptr);
@@ -243,3 +256,70 @@ bool storeLogs(float temperature, float humidity, double ventTemp, String time){
   }
   return true;
 }
+
+double getTargetTemp(){
+  //Retrieve the current targetTemperature from the Firestore database for the unit
+  //And return it
+  if (Firebase.Firestore.getDocument(&fbdo2, FIREBASE_PROJECT_ID, "", "units/" + unitID, "targetTemperature")){
+    //Serial.printf("ok\n%s\n\n", fbdo2.payload().c_str());
+    JSONdata.clear();
+    JSONdata.setJsonData(fbdo2.payload());
+    FirebaseJsonData clear;
+    result = clear;
+    JSONdata.get(result, "fields/targetTemperature/integerValue");
+    if (result.success && result.type != "null"){
+      if (result.type == "string"){
+        //Serial.println(result.to<String>().c_str());
+        return std::stod(result.to<String>().c_str());
+      }
+      else if (result.type == "int"){
+        //Serial.println(result.to<int>());
+        return (int) result.to<int>();
+      }
+      else if (result.type == "float" || result.type == "double") {
+        //Serial.println(result.to<double>());
+        return result.to<double>();
+      }
+      else if (result.type == "null"){
+        //Serial.println(result.to<String>().c_str());
+        return -9999;
+      }
+    }
+    else{
+      JSONdata.get(result, "fields/targetTemperature/doubleValue");
+      if (result.success){
+        if (result.type == "float" || result.type == "double") {
+          //Serial.println(result.to<double>());
+          return result.to<double>();
+        }
+        else if (result.type == "string"){
+          //Serial.println(result.to<String>().c_str());
+          return std::stod(result.to<String>().c_str());
+        }
+        else if (result.type == "int"){
+          //Serial.println(result.to<int>());
+          return (int) result.to<int>();
+        }
+
+        else if (result.type == "null"){
+          //Serial.println(result.to<String>().c_str());
+          return -9999;
+        }
+      }
+    }
+  }
+  else
+      Serial.println(fbdo2.errorReason());
+  return -9999;
+}
+
+void setVentOpening(int percent){
+  //Set the servo to achieve the desired amount of vent open
+  //100 percent is fully open vent
+  //0 percent is fully closed vent
+    if (percent>100)
+      percent %= 100;
+    int angle = (int) ((percent*1.4)+30);
+    myservo.write(angle);
+}
+
