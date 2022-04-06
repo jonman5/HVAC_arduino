@@ -151,21 +151,6 @@ void loop(){
     }
     Serial.print("\nTarget Temp: ");
     Serial.println(currentTargetTemp);
-
-//    test vent
-//    setVentOpening(0);
-//    delay(1000);
-//    setVentOpening(100);
-//    delay(1000);
-//    setVentOpening(30);
-//    delay(1000);
-//    setVentOpening(100);
-//    delay(1000);
-//    setVentOpening(60);
-//    delay(1000);
-//    setVentOpening(0);
-//    delay(1000);
-//    setVentOpening(80);
  
     
     //Get current time from time server
@@ -182,6 +167,7 @@ void loop(){
       Serial.println("Current sensor data updated in RTDB for " + unitID);
       
       // Write current sensor data to logs in real time database
+      delay(100);
       if (storeLogs(t_room, h, t_vent, time_string)){
         Serial.print("Sensor logs stored in RTDB for ");
         Serial.println(time_string);
